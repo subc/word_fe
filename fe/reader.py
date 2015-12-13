@@ -74,7 +74,7 @@ def main():
 
     # 評価高い投稿を出力
     for key in r:
-        if r[key].priority > 2:
+        if r[key].priority > 200:
             print "++++++++++++++++++++"
             print r[key].priority
             print "++++++++++++++++++++"
@@ -146,7 +146,7 @@ def dat_reader(path):
     f = open(path, 'r')
     for i, line in enumerate(f):
         if 20 < i < 1000:
-            yield Posted(i, line)
+            yield Posted(i + 1, line)
 
 
 class Posted(object):
@@ -179,6 +179,20 @@ class Posted(object):
         """
         return [BeautifulSoup(m, "lxml") for m in self.parse_post_message]
 
+    @cached_property
+    def post_message_for_output(self):
+        """
+        ポストメッセージからAタグ除外
+        """
+        r = []
+        for soup in self.parse_bs4:
+            s = soup.text
+            if soup.a:
+                for _a in soup.a:
+                    s = s.replace(str(_a), "")
+            r.append(s)
+        return r
+
     @property
     def count_link(self):
         return sum([len(soup.a) for soup in self.parse_bs4 if soup.a])
@@ -204,24 +218,25 @@ class Posted(object):
         """
         品質が悪い投稿
         """
-        self.priority = -100
+        self.priority = -10000
 
     def printer(self, depth=0, r=None):
         prefix = "".join(['--' for x in range(depth)])
         print "{}◆◆ {}".format(prefix, str(self.num))
-        for x in self.parse_post_message:
-            print prefix, x
+        for x in self.post_message_for_output:
+            if len(x) > 1:
+                print prefix, x
 
         # 子レスをprint
         if r:
-            [r[child_res].printer(depth=depth + 1, r=r) for child_res in self.child]
+            [r[child_res].printer(depth=depth + 1, r=r) for child_res in self.child if r[child_res].priority >= 0]
 
     def res_from(self, child_res):
         """
         特定投稿からのres
         """
         # 自己評価を上げる
-        self.priority += 1
+        self.priority += 100
 
         # 子レスを記録
         self.set_child(child_res)
@@ -253,6 +268,10 @@ class Posted(object):
                 else:
                     print "NOT FOUND ERROR:{}".format(res_num)
 
+        # 画像かURL入っていたら除外
+        for x in self.post_message_for_output:
+            if '://' in x:
+                self.set_cheap()
 
 t = Tokenizer()
 main()
