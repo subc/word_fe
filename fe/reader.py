@@ -7,8 +7,8 @@ import re
 from bs4 import BeautifulSoup
 
 
-DATA_PATH = '../dat/ffbe.dat'
-# DATA_PATH = '../dat/punk.dat'
+# DATA_PATH = '../dat/ffbe.dat'
+DATA_PATH = '../dat/punk.dat'
 
 
 def token_is_sub(token):
@@ -63,10 +63,27 @@ def final_filter(prev_token, token):
 
 def main():
     print "start"
+    # 読み込み
     r = {}
     for posted in dat_reader(DATA_PATH):
         r[posted.num] = posted
 
+    # 読み込み後のパース
+    for key in r:
+        r[key].check(r)
+
+    # 評価高い投稿を出力
+    for key in r:
+        if r[key].priority > 2:
+            print "++++++++++++++++++++"
+            print r[key].priority
+            print "++++++++++++++++++++"
+
+            r[key].printer(r=r)
+
+    raise
+
+    # キーワード解析
     tfidf1 = defaultdict(int)
     tfidf2 = defaultdict(int)
     tfidf2_post = defaultdict(list)
@@ -136,6 +153,8 @@ class Posted(object):
     def __init__(self, num, line):
         self.num = num
         self.line = line
+        self.priority = 0
+        self.child = []
 
     def __repr__(self):
         return self.parse_post_message[0]
@@ -152,10 +171,88 @@ class Posted(object):
     def parse_post_message(self):
         return self.post_message.split('<br>')
 
-    def printer(self):
-        print "--- {}".format(str(self.num))
+    @cached_property
+    def parse_bs4(self):
+        """
+        行毎のBeautifulSoupの解析結果
+        :rtype : list of BeautifulSoup
+        """
+        return [BeautifulSoup(m, "lxml") for m in self.parse_post_message]
+
+    @property
+    def count_link(self):
+        return sum([len(soup.a) for soup in self.parse_bs4 if soup.a])
+
+    @cached_property
+    def res(self):
+        """
+        >> 1 なら [1]
+        >> 234, 561なら [234, 561]
+        """
+        r = []
+        for t in [soup.a.text for soup in self.parse_bs4 if soup.a]:
+            res_base = t.replace(">>", "")
+            try:
+                res = int(res_base)
+                if 10 < res < 1000:
+                    r.append(res)
+            except:
+                pass
+        return r
+
+    def set_cheap(self):
+        """
+        品質が悪い投稿
+        """
+        self.priority = -100
+
+    def printer(self, depth=0, r=None):
+        prefix = "".join(['--' for x in range(depth)])
+        print "{}◆◆ {}".format(prefix, str(self.num))
         for x in self.parse_post_message:
-            print x
+            print prefix, x
+
+        # 子レスをprint
+        if r:
+            [r[child_res].printer(depth=depth + 1, r=r) for child_res in self.child]
+
+    def res_from(self, child_res):
+        """
+        特定投稿からのres
+        """
+        # 自己評価を上げる
+        self.priority += 1
+
+        # 子レスを記録
+        self.set_child(child_res)
+
+    def set_child(self, child_res):
+        if self.num == child_res:
+            return
+        self.child.append(child_res)
+
+    def check(self, r):
+        """
+        自己診断する
+        """
+        # NGワード
+        # レス数の検知
+        if self.count_link > 1:
+            self.set_cheap()
+            return
+
+        # 未来に向けたレス
+        for res_num in self.res:
+            if self.num <= res_num:
+                self.set_cheap()
+            else:
+                # レスによる重み付け
+                if res_num in r:
+                    parent = r[res_num]
+                    parent.res_from(self.num)
+                else:
+                    print "NOT FOUND ERROR:{}".format(res_num)
+
 
 t = Tokenizer()
 main()
