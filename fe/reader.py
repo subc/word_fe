@@ -62,7 +62,7 @@ def final_filter(prev_token, token):
 
 
 def main():
-    print "start"
+    print("start")
     # 読み込み
     r = {}
     for posted in dat_reader(DATA_PATH):
@@ -74,14 +74,15 @@ def main():
 
     # 評価高い投稿を出力
     for key in r:
+        output = Outputter()
         if r[key].priority > 200:
-            print "++++++++++++++++++++"
-            print r[key].priority
-            print "++++++++++++++++++++"
+            print("++++++++++++++++++++")
+            print(r[key].priority)
+            print("++++++++++++++++++++")
+            r[key].printer(r=r, output=output)
+        output.printer()
 
-            r[key].printer(r=r)
-
-    raise
+    # raise
 
     # キーワード解析
     tfidf1 = defaultdict(int)
@@ -114,31 +115,34 @@ def main():
             except:
                 pass
 
-    print "+++++++++++++++++++++++"
-    print "tfidf1"
-    print "+++++++++++++++++++++++"
+    print("+++++++++++++++++++++++")
+    print("tfidf1")
+    print("+++++++++++++++++++++++")
     for key in tfidf1:
         if tfidf1[key] > 10:
-            print "{}:{}".format(key, tfidf1[key])
+            print("{}:{}".format(key, tfidf1[key]))
 
-    print "+++++++++++++++++++++++"
-    print "tfidf2-post"
-    print "+++++++++++++++++++++++"
+    print("+++++++++++++++++++++++")
+    print("tfidf2-post")
+    print("+++++++++++++++++++++++")
     for key in tfidf2_post:
         if tfidf2[key] > 5:
-            print "+++++++{}+++++++".format(key)
+            print("+++++++{}+++++++".format(key))
+            # keywordによるpriorityアップ
             for posted in tfidf2_post[key]:
-                posted.printer()
+                posted.priority_from_keyword()
+
+            printer_res(tfidf2_post[key], r)
             # print "".join([x.post_message for x in tfidf2_post[key]])
 
-    print "+++++++++++++++++++++++"
-    print "tfidf2"
-    print "+++++++++++++++++++++++"
+    print("+++++++++++++++++++++++")
+    print("tfidf2")
+    print("+++++++++++++++++++++++")
     for key in tfidf2:
         if tfidf2[key] > 5:
-            print "{}:{}".format(key, tfidf2[key])
+            print("{}:{}".format(key, tfidf2[key]))
 
-    print "finish"
+    print("finish")
 
 
 def dat_reader(path):
@@ -149,12 +153,75 @@ def dat_reader(path):
             yield Posted(i + 1, line)
 
 
+def printer_res(posts, r):
+    """
+    レス数が多いときは数を減らしてprint
+    目安は7
+    """
+    # priorityがマイナスは対象外
+    posts = [p for p in posts if p.priority >= 0]
+    # 子供は除外
+    posts = [p for p in posts if not p.i_am_child]
+
+    limit = 7
+    count = len(posts)
+    if count >= limit:
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~')
+        print(["{}:{}".format(p.num, p.priority) for p in posts])
+        _posts = roulette(posts, limit)
+        print(["{}:{}".format(p.num, p.priority) for p in _posts])
+    else:
+        _posts = posts
+
+    # printer
+    _posts = sorted(_posts, key=lambda x: x.num)
+    _printed = []
+    output = Outputter()
+    for post in _posts:
+        _printed = post.printer(r=r, printed=_printed, output=output)
+    output.printer()
+
+
+def roulette(posts, limit):
+    """
+    priorityによるルーレット選択
+    """
+    if len(posts) <= limit:
+        return posts
+    posts = sorted(posts, key=lambda x: x.priority, reverse=True)
+    return posts[:limit]
+
+
+class Outputter(object):
+    def __init__(self):
+        self.output = []
+        self.counter = 0
+
+    @property
+    def count(self):
+        return self.counter
+
+    def _count_up(self):
+        self.counter += 1
+
+    def extend(self, p):
+        self.output.append(p)
+        self._count_up()
+
+    def printer(self):
+        if self.count > 4:
+            l = [str(p.num) for p in self.output]
+            print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
+            print('output【{}】:'.format(self.count) + ','.join(l))
+            print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
+
 class Posted(object):
     def __init__(self, num, line):
         self.num = num
         self.line = line
         self.priority = 0
         self.child = []
+        self.i_am_child = None
 
     def __repr__(self):
         return self.parse_post_message[0]
@@ -220,16 +287,23 @@ class Posted(object):
         """
         self.priority = -10000
 
-    def printer(self, depth=0, r=None):
-        prefix = "".join(['--' for x in range(depth)])
-        print "{}◆◆ {}".format(prefix, str(self.num))
-        for x in self.post_message_for_output:
-            if len(x) > 1:
-                print prefix, x
+    def printer(self, depth=0, r=None, printed=[], output=None):
+        # print済みでなければprintする
+        if self.num not in printed:
+            printed.append(self.num)
+            if output:
+                output.extend(self)
+            prefix = "".join(['--' for x in range(depth)])
+            print("{}◆◆ {}:{}".format(prefix, str(self.num), str(self.priority)))
+            for x in self.post_message_for_output:
+                if len(x) > 1:
+                    print(prefix, x)
 
         # 子レスをprint
         if r:
-            [r[child_res].printer(depth=depth + 1, r=r) for child_res in self.child if r[child_res].priority >= 0]
+            printed = [r[child_res].printer(depth=depth + 1, r=r, printed=printed, output=output)
+                       for child_res in self.child if r[child_res].priority >= 0]
+        return printed
 
     def res_from(self, child_res):
         """
@@ -241,10 +315,19 @@ class Posted(object):
         # 子レスを記録
         self.set_child(child_res)
 
+    def priority_from_keyword(self):
+        """
+        keywordによるpriorityアップ
+        """
+        self.priority += 1
+
     def set_child(self, child_res):
         if self.num == child_res:
             return
         self.child.append(child_res)
+
+    def set_i_am_child(self):
+        self.i_am_child = True
 
     def check(self, r):
         """
@@ -265,8 +348,9 @@ class Posted(object):
                 if res_num in r:
                     parent = r[res_num]
                     parent.res_from(self.num)
+                    self.set_i_am_child()
                 else:
-                    print "NOT FOUND ERROR:{}".format(res_num)
+                    print("NOT FOUND ERROR:{}".format(res_num))
 
         # 画像かURL入っていたら除外
         for x in self.post_message_for_output:
