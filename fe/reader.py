@@ -6,7 +6,6 @@ from janome.tokenizer import Tokenizer
 import re
 from bs4 import BeautifulSoup
 
-
 # DATA_PATH = '../dat/ffbe.dat'
 DATA_PATH = '../dat/punk.dat'
 
@@ -215,6 +214,7 @@ class Outputter(object):
             print('output【{}】:'.format(self.count) + ','.join(l))
             print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
 
+
 class Posted(object):
     def __init__(self, num, line):
         self.num = num
@@ -356,6 +356,7 @@ class Posted(object):
         for x in self.post_message_for_output:
             if '://' in x:
                 self.set_cheap()
+
 
 t = Tokenizer()
 main()
